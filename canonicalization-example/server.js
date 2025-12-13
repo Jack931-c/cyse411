@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -11,6 +12,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const BASE_DIR = path.resolve(__dirname, 'files');
 if (!fs.existsSync(BASE_DIR)) fs.mkdirSync(BASE_DIR, { recursive: true });
+const fileReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests.' }
+});
+
 
 // helper to canonicalize and check
 function resolveSafe(baseDir, userInput) {
@@ -23,6 +32,7 @@ function resolveSafe(baseDir, userInput) {
 // Secure route
 app.post(
   '/read',
+  fileReadLimiter,
   body('filename')
     .exists().withMessage('filename required')
     .bail()
@@ -50,7 +60,7 @@ app.post(
 );
 
 // Vulnerable route (demo)
-app.post('/read-no-validate', (req, res) => {
+app.post('/read-no-validate', fileReadLimiter, (req, res) => {
   const filename = req.body.filename || '';
   const normalized = resolveSafe(BASE_DIR, filename); // Fixed the intentionally vulnerable line
   if (!normalized.startsWith(BASE_DIR + path.sep)) {return res.status(403).json({ error: 'Path traversal detected' })}; // Added this as a check for path traversal 
@@ -60,7 +70,7 @@ app.post('/read-no-validate', (req, res) => {
 });
 
 // Helper route for samples
-app.post('/setup-sample', (req, res) => {
+app.post('/setup-sample', fileReadLimiter, (req, res) => {
   const samples = {
     'hello.txt': 'Hello from safe file!\n',
     'notes/readme.md': '# Readme\nSample readme file'
